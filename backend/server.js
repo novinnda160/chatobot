@@ -1,7 +1,5 @@
 // ======================== IMPORTS ========================
-import pkg from "@adiwajshing/baileys";
-const { makeWASocket, useMultiFileAuthState } = pkg;
-
+import { default as makeWASocket, useMultiFileAuthState } from "@adiwajshing/baileys";
 import qrcode from "qrcode-terminal";
 import express from "express";
 import mongoose from "mongoose";
@@ -12,10 +10,16 @@ dotenv.config();
 const app = express();
 
 // ======================== MONGODB ========================
+if (!process.env.MONGO_URI) {
+  console.error("❌ Erro: MONGO_URI não definido nas variáveis de ambiente!");
+  process.exit(1);
+}
+
 mongoose.connect(process.env.MONGO_URI)
   .then(() => console.log("✅ Conectado ao MongoDB Atlas"))
   .catch(err => console.error("❌ Erro MongoDB:", err));
 
+// ======================== MODEL ========================
 const messageSchema = new mongoose.Schema({
   from: String,
   text: String,
@@ -45,9 +49,10 @@ app.get("/relatorio", async (req, res) => {
 // ======================== BOT ========================
 const startBot = async () => {
   // Cria auth/ automaticamente se não existir
-  if (!fs.existsSync("./auth")) fs.mkdirSync("./auth");
+  const authPath = "./auth";
+  if (!fs.existsSync(authPath)) fs.mkdirSync(authPath);
 
-  const { state, saveCreds } = await useMultiFileAuthState("./auth");
+  const { state, saveCreds } = await useMultiFileAuthState(authPath);
   const sock = makeWASocket({ auth: state });
 
   sock.ev.on("connection.update", ({ connection, qr }) => {
@@ -66,14 +71,11 @@ const startBot = async () => {
 
     const from = msg.key.remoteJid;
     const text = msg.message.conversation?.trim().toLowerCase();
-
     console.log("📩 Mensagem recebida:", text);
 
-    // Buscar última mensagem do usuário
     let lastMsg = await Message.findOne({ from }).sort({ timestamp: -1 });
     let step = lastMsg?.step || 0;
 
-    // Comando para reiniciar atendimento
     if (text === "oi" || text === "menu") {
       await sock.sendMessage(from, { text: "🔄 Atendimento reiniciado!" });
       await sock.sendMessage(from, { text: "Colchões Requinte, o sono perfeito 🌙\nSeja bem-vindo, todos nossos produtos estão em promoção!" });
@@ -82,12 +84,10 @@ const startBot = async () => {
       return;
     }
 
-    // Função para salvar mensagem
     const saveMsg = async (stepNum, extra = {}) => {
       await new Message({ from, text, step: stepNum, ...extra }).save();
     };
 
-    // ======================== FLUXO ========================
     switch (step) {
       case 0:
         await sock.sendMessage(from, { text: "Colchões Requinte, o sono perfeito 🌙\nSeja bem-vindo, todos nossos produtos estão em promoção!" });
@@ -131,9 +131,11 @@ const startBot = async () => {
   });
 };
 
+// ======================== START BOT ========================
 startBot();
 
 // ======================== SERVER ========================
-app.listen(process.env.PORT, () => {
-  console.log(`🚀 Servidor rodando na porta ${process.env.PORT}`);
+const PORT = process.env.PORT || 10000;
+app.listen(PORT, () => {
+  console.log(`🚀 Servidor rodando na porta ${PORT}`);
 });
